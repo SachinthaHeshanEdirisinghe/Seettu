@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const groupRoutes = require('./routes/groupRoutes.js');
+const authRoutes = require('./routes/authRoutes.js');
 
 const cors = require('cors');
 
@@ -16,6 +17,7 @@ mongoose.connect(process.env.MONGO_URI)
 
 // Routes
 app.use(cors()); 
+app.use('/api/auth', authRoutes);
 app.use('/api/groups', groupRoutes);
 
 const PORT = process.env.PORT || 5000;

@@ -1,17 +1,56 @@
 const Group = require('../model/Group');
+const User = require('../model/User');
+
+const getMissingPhones = async (phones) => {
+    const uniquePhones = [...new Set(
+        phones
+            .map((phone) => (typeof phone === 'string' ? phone.trim() : ''))
+            .filter(Boolean)
+    )];
+
+    if (uniquePhones.length === 0) {
+        return [];
+    }
+
+    const users = await User.find({ phone: { $in: uniquePhones } }).select('phone');
+    const foundPhones = new Set(users.map((user) => user.phone));
+    return uniquePhones.filter((phone) => !foundPhones.has(phone));
+};
 
 // CREATE
 exports.createGroup = async (req, res) => {
     try {
-        const { groupName, category, productName, totalPrice, installmentMonths, members } = req.body;
-        
+        const { groupName, category, productName, totalPrice, installmentMonths, members, creatorEmail } = req.body;
+        const email = typeof creatorEmail === 'string' ? creatorEmail.trim().toLowerCase() : '';
+
+        if (!email) {
+            return res.status(400).json({ message: 'Creator email is required.' });
+        }
+
+        const creator = await User.findOne({ email });
+        if (!creator) {
+            return res.status(404).json({ message: 'User not found. Please sign in again.' });
+        }
+
+        if (!Array.isArray(members) || members.length === 0) {
+            return res.status(400).json({ message: 'Please add at least one group member.' });
+        }
+
+        const memberPhones = members.map((member) => member?.phone);
+        const missingPhones = await getMissingPhones(memberPhones);
+        if (missingPhones.length > 0) {
+            return res.status(400).json({
+                message: `These phone numbers are not registered: ${missingPhones.join(', ')}`,
+            });
+        }
+
         const newGroup = new Group({
             groupName,
             category,
             productName,
             totalPrice,
             installmentMonths,
-            members 
+            members,
         });
         const savedGroup = await newGroup.save();
         res.status(201).json(savedGroup);
@@ -49,6 +88,13 @@ exports.addMemberToGroup = async (req, res) => {
 
         if (!trimmedName || !trimmedPhone) {
             return res.status(400).json({ message: 'Member name and phone are required.' });
+        }
+
+        const missingPhones = await getMissingPhones([trimmedPhone]);
+        if (missingPhones.length > 0) {
+            return res.status(400).json({
+                message: 'This phone number is not registered. Ask them to sign up first.',
+            });
         }
 
         const group = await Group.findById(req.params.id);
