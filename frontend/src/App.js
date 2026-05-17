@@ -11,7 +11,7 @@ function App() {
   const location = useLocation();
   const navigate = useNavigate();
   const [authMode, setAuthMode] = useState('signin');
-  const [authUser, setAuthUser] = useState(() => localStorage.getItem(AUTH_SESSION_KEY) || '');
+  const [authUser, setAuthUser] = useState(() => sessionStorage.getItem(AUTH_SESSION_KEY) || '');
   const [currentUser, setCurrentUser] = useState(null);
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [authError, setAuthError] = useState(null);
@@ -41,7 +41,7 @@ function App() {
       const { data } = await axios.get(`${AUTH_API_URL}/me`, { params: { email } });
       setCurrentUser(data.user || null);
     } catch {
-      localStorage.removeItem(AUTH_SESSION_KEY);
+      sessionStorage.removeItem(AUTH_SESSION_KEY);
       setAuthUser('');
       setCurrentUser(null);
     }
@@ -111,7 +111,7 @@ function App() {
       const { data } = await axios.post(`${AUTH_API_URL}${endpoint}`, payload);
 
       const user = data.user;
-      localStorage.setItem(AUTH_SESSION_KEY, user.email);
+      sessionStorage.setItem(AUTH_SESSION_KEY, user.email);
       setAuthUser(user.email);
       setCurrentUser(user);
       setSuccessMessage(authMode === 'signup' ? 'Account created successfully.' : 'Signed in successfully.');
@@ -124,7 +124,7 @@ function App() {
   };
 
   const handleSignOut = () => {
-    localStorage.removeItem(AUTH_SESSION_KEY);
+    sessionStorage.removeItem(AUTH_SESSION_KEY);
     setAuthUser('');
     setCurrentUser(null);
     setAuthMode('signin');
@@ -141,7 +141,7 @@ function App() {
     setError(null);
     setSuccessMessage(null);
     try {
-      await axios.delete(`${API_URL}/${id}`);
+      await axios.delete(`${API_URL}/${id}?requesterEmail=${encodeURIComponent(currentUser?.email || '')}`);
       setSuccessMessage('Group removed.');
       setGroups((prev) => prev.filter((g) => g._id !== id));
     } catch (err) {
@@ -185,6 +185,7 @@ function App() {
         name,
         phone,
         requesterPhone: currentUser?.phone || '',
+        requesterEmail: currentUser?.email || '',
       });
       setSuccessMessage('Member added successfully.');
       setMemberDrafts((prev) => ({
@@ -221,11 +222,89 @@ function App() {
     }
   };
 
+  const handleRemoveMember = async (groupId, phone) => {
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      await axios.delete(`${API_URL}/${groupId}/members/${phone}?requesterEmail=${encodeURIComponent(currentUser?.email || '')}`);
+      setSuccessMessage('Member removed.');
+      await fetchGroups();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  };
+
+  const handleBulkAddMembers = async (groupId, bulkText) => {
+    setError(null);
+    setSuccessMessage(null);
+    
+    // Parse bulkText (e.g. "Name, Phone\nName2, Phone2")
+    const lines = bulkText.split('\n');
+    const members = [];
+    for (const line of lines) {
+       const parts = line.split(',');
+       if (parts.length >= 2) {
+           const name = parts[0].trim();
+           const phone = parts[1].trim();
+           if (name && phone) members.push({ name, phone });
+       }
+    }
+    
+    if (members.length === 0) {
+       setError('Please enter at least one valid member format (Name, Phone).');
+       return;
+    }
+
+    try {
+      await axios.post(`${API_URL}/${groupId}/members/bulk`, {
+        members,
+        requesterEmail: currentUser?.email || '',
+      });
+      setSuccessMessage('Bulk add successful.');
+      await fetchGroups();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  };
+
+  const handleBulkRemoveMembers = async (groupId, phones) => {
+    if (!phones || phones.length === 0) return;
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      await axios.delete(`${API_URL}/${groupId}/members`, {
+         data: { phones, requesterEmail: currentUser?.email || '' }
+      });
+      setSuccessMessage(`Removed selected members.`);
+      await fetchGroups();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  };
+
+  const handleUpdateProfile = async (name, phone) => {
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      const { data } = await axios.put(`${AUTH_API_URL}/update`, {
+         email: currentUser?.email,
+         name,
+         phone
+      });
+      setCurrentUser(data.user);
+      setSuccessMessage('Profile updated successfully.');
+      await fetchGroups(); // Refresh groups because members array cascades
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  };
+
   const sharedPageProps = {
     theme,
     onToggleTheme: () => setTheme((t) => (t === 'dark' ? 'light' : 'dark')),
     onSignOut: handleSignOut,
     currentUser,
+    onUpdateProfile: handleUpdateProfile,
     groups,
     loading,
     joiningGroupId,
@@ -235,6 +314,9 @@ function App() {
     onToggleAddMember: toggleAddMemberForm,
     onMemberDraftChange: handleExistingMemberDraftChange,
     onAddMember: handleAddMemberToGroup,
+    onRemoveMember: handleRemoveMember,
+    onBulkAddMembers: handleBulkAddMembers,
+    onBulkRemoveMembers: handleBulkRemoveMembers,
   };
 
   if (!authUser) {

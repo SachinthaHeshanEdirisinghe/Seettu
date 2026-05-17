@@ -17,6 +17,7 @@ const groupSchema = new mongoose.Schema({
             joinedAt: { type: Date, default: Date.now }
         }
     ],
+    admin: { type: String, required: true },
     createdAt: { type: Date, default: Date.now }
 });
 

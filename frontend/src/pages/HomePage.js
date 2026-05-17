@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import AppHeader from '../components/AppHeader';
+import Navbar from '../components/Navbar';
 import GroupCard from '../components/GroupCard';
 import { ELECTRONIC_ADS } from '../constants';
 
@@ -20,13 +20,22 @@ function HomePage({
   onToggleAddMember,
   onMemberDraftChange,
   onAddMember,
+  onRemoveMember,
+  onBulkAddMembers,
+  onBulkRemoveMembers,
+  onUpdateProfile
 }) {
   const navigate = useNavigate();
 
+  const userGroups = groups.filter(group => 
+    group.admin === currentUser?.email || 
+    (Array.isArray(group.members) && currentUser?.phone && group.members.some(member => member.phone === currentUser.phone))
+  );
+
   return (
     <div className="mobicircle-app">
+      <Navbar theme={theme} onToggleTheme={onToggleTheme} currentUser={currentUser} onUpdateProfile={onUpdateProfile} onSignOut={onSignOut} />
       <div className="mobicircle-inner">
-        <AppHeader theme={theme} onToggleTheme={onToggleTheme} onSignOut={onSignOut} />
 
         {error && (
           <div className="mc-alert mc-alert--error" role="alert">
@@ -73,12 +82,12 @@ function HomePage({
             <p className="mc-loading">Loading groups…</p>
           ) : (
             <div className="mc-grid">
-              {groups.length === 0 ? (
+              {userGroups.length === 0 ? (
                 <p className="mc-empty">
                   No groups yet. Pick a product above and start a buying circle.
                 </p>
               ) : (
-                groups.map((group) => (
+                userGroups.map((group) => (
                   <GroupCard
                     key={group._id}
                     group={group}
@@ -91,6 +100,9 @@ function HomePage({
                     onToggleAddMember={onToggleAddMember}
                     onMemberDraftChange={onMemberDraftChange}
                     onAddMember={onAddMember}
+                    onRemoveMember={onRemoveMember}
+                    onBulkAddMembers={onBulkAddMembers}
+                    onBulkRemoveMembers={onBulkRemoveMembers}
                   />
                 ))
               )}

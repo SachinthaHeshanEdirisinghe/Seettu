@@ -1,4 +1,5 @@
-import { Trash2, UserPlus } from 'lucide-react';
+import { useState } from 'react';
+import { Trash2, UserPlus, CheckSquare } from 'lucide-react';
 import { formatMoney, monthlyInstallment } from '../utils';
 
 function GroupCard({
@@ -12,13 +13,42 @@ function GroupCard({
   onToggleAddMember,
   onMemberDraftChange,
   onAddMember,
+  onRemoveMember,
+  onBulkAddMembers,
+  onBulkRemoveMembers,
   showDelete = true,
 }) {
+  const [selectedPhones, setSelectedPhones] = useState([]);
+  const [bulkMode, setBulkMode] = useState(false);
+  const [bulkText, setBulkText] = useState('');
+  
   const monthly = monthlyInstallment(group.totalPrice);
   const isJoined =
     Array.isArray(group.members) &&
     currentUser?.phone &&
     group.members.some((member) => member.phone === currentUser.phone);
+    
+  const isAdmin = group.admin === currentUser?.email;
+
+  const toggleSelection = (phone) => {
+      setSelectedPhones(prev => 
+          prev.includes(phone) ? prev.filter(p => p !== phone) : [...prev, phone]
+      );
+  };
+
+  const handleBulkRemove = () => {
+       if (selectedPhones.length > 0) {
+           onBulkRemoveMembers(group._id, selectedPhones);
+           setSelectedPhones([]);
+       }
+  };
+
+  const handleBulkAdd = () => {
+      if (bulkText.trim()) {
+          onBulkAddMembers(group._id, bulkText);
+          setBulkText('');
+      }
+  };
 
   return (
     <article className="mc-card">
@@ -41,32 +71,103 @@ function GroupCard({
             <span>{monthly != null ? formatMoney(monthly) : '—'}</span>
           </div>
         </div>
-        <p className="mc-meta">
-          <strong>Members:</strong> {Array.isArray(group.members) ? group.members.length : 0}
-        </p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <p className="mc-meta">
+            <strong>Members:</strong> {Array.isArray(group.members) ? group.members.length : 0}
+          </p>
+          {isAdmin && selectedPhones.length > 0 && (
+             <button type="button" className="mc-btn mc-btn--danger" style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }} onClick={handleBulkRemove}>
+                 Remove {selectedPhones.length}
+             </button>
+          )}
+        </div>
+        
+        {Array.isArray(group.members) && group.members.length > 0 && (
+          <ul style={{ listStyleType: 'none', padding: 0, marginTop: '8px', fontSize: '0.9rem' }}>
+            {group.members.map(member => (
+              <li key={member.phone} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', background: 'var(--surface-elevated)', padding: '4px 8px', borderRadius: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    {isAdmin && (
+                        <input 
+                            type="checkbox" 
+                            checked={selectedPhones.includes(member.phone)}
+                            onChange={() => toggleSelection(member.phone)}
+                            style={{ cursor: 'pointer' }}
+                        />
+                    )}
+                    <span>{member.name} ({member.phone})</span>
+                </div>
+                {isAdmin && (
+                  <button 
+                    type="button" 
+                    className="mc-btn mc-btn--danger" 
+                    style={{ padding: '2px 6px', fontSize: '0.75rem', minWidth: 'auto', minHeight: 'auto', borderRadius: '4px', display: 'inline-flex' }}
+                    onClick={() => onRemoveMember(group._id, member.phone)}
+                  >
+                    X
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
       <div className="mc-card-actions">
-        <button
-          type="button"
-          className={`mc-btn ${isJoined ? 'mc-btn--secondary' : 'mc-btn--success'}`}
-          style={{ width: '100%', marginBottom: '0.6rem' }}
-          onClick={() => onJoin(group._id)}
-          disabled={isJoined || joiningGroupId === group._id}
-        >
-          {isJoined ? 'Joined' : joiningGroupId === group._id ? 'Joining…' : 'Join Group'}
-        </button>
-        {isJoined && (
-          <button
-            type="button"
-            className="mc-btn mc-btn--success"
-            style={{ width: '100%', marginBottom: '0.6rem' }}
-            onClick={() => onToggleAddMember(group._id)}
-          >
-            <UserPlus size={16} aria-hidden />
-            {addingMemberId === group._id ? 'Close' : 'Add Member'}
-          </button>
+        {!isJoined ? (
+            <button
+              type="button"
+              className="mc-btn mc-btn--success"
+              style={{ width: '100%', marginBottom: '0.6rem' }}
+              onClick={() => onJoin(group._id)}
+              disabled={joiningGroupId === group._id}
+            >
+              {joiningGroupId === group._id ? 'Joining…' : 'Join Group'}
+            </button>
+        ) : (
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.6rem' }}>
+                <button type="button" className="mc-btn mc-btn--secondary" style={{ flex: 1 }} disabled>
+                  Joined
+                </button>
+                {!isAdmin && currentUser?.phone && (
+                    <button
+                      type="button"
+                      className="mc-btn mc-btn--danger"
+                      style={{ flex: 1 }}
+                      onClick={() => onRemoveMember(group._id, currentUser.phone)}
+                    >
+                      Leave Group
+                    </button>
+                )}
+            </div>
         )}
-        {isJoined && addingMemberId === group._id && (
+        {(isJoined || isAdmin) && (
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.6rem' }}>
+               <button
+                 type="button"
+                 className="mc-btn mc-btn--success"
+                 style={{ flex: 1 }}
+                 onClick={() => { setBulkMode(false); onToggleAddMember(group._id); }}
+               >
+                 <UserPlus size={16} aria-hidden />
+                 {addingMemberId === group._id && !bulkMode ? 'Close' : 'Add 1'}
+               </button>
+               {isAdmin && (
+                   <button
+                     type="button"
+                     className="mc-btn mc-btn--secondary"
+                     style={{ flex: 1 }}
+                     onClick={() => { 
+                         if (addingMemberId !== group._id) onToggleAddMember(group._id);
+                         setBulkMode(!bulkMode); 
+                     }}
+                   >
+                     Batch
+                   </button>
+               )}
+          </div>
+        )}
+        
+        {(isJoined || isAdmin) && addingMemberId === group._id && !bulkMode && (
           <div className="mc-card-member-form">
             <div className="mc-field">
               <label htmlFor={`card-member-name-${group._id}`}>Member Name</label>
@@ -98,15 +199,39 @@ function GroupCard({
             </button>
           </div>
         )}
-        {showDelete && (
+        
+        {isAdmin && addingMemberId === group._id && bulkMode && (
+          <div className="mc-card-member-form">
+            <div className="mc-field">
+              <label htmlFor={`bulk-add-${group._id}`}>Paste Members (Name, Phone)</label>
+              <textarea
+                id={`bulk-add-${group._id}`}
+                value={bulkText}
+                onChange={(e) => setBulkText(e.target.value)}
+                placeholder="Alex, 0710001000&#10;John, 0770002000"
+                style={{ width: '100%', minHeight: '80px', padding: '0.5rem', borderRadius: '8px', background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}
+              />
+            </div>
+            <button
+              type="button"
+              className="mc-btn mc-btn--success"
+              style={{ width: '100%' }}
+              onClick={handleBulkAdd}
+            >
+              Bulk Add All
+            </button>
+          </div>
+        )}
+        
+        {showDelete && isAdmin && (
           <button
             type="button"
             className="mc-btn mc-btn--danger"
-            style={{ width: '100%' }}
+            style={{ width: '100%', marginTop: '0.6rem' }}
             onClick={() => onDelete(group._id)}
           >
             <Trash2 size={16} aria-hidden />
-            Delete
+            Delete Group
           </button>
         )}
       </div>

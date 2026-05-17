@@ -78,3 +78,40 @@ exports.getMe = async (req, res) => {
         res.status(500).json({ message: 'Failed to load user', error: err.message });
     }
 };
+
+// PUT /api/auth/update
+exports.updateProfile = async (req, res) => {
+    try {
+        const { email, name, phone } = req.body;
+        const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+        const newName = typeof name === 'string' ? name.trim() : '';
+        const newPhone = typeof phone === 'string' ? phone.trim() : '';
+
+        if (!normalizedEmail || !newName || !newPhone) {
+            return res.status(400).json({ message: 'Email, name, and phone are required.' });
+        }
+
+        const user = await User.findOne({ email: normalizedEmail });
+        if (!user) {
+            return res.status(404).json({ message: 'User not found.' });
+        }
+        
+        const oldPhone = user.phone;
+        user.name = newName;
+        user.phone = newPhone;
+        await user.save();
+
+        if (oldPhone !== newPhone || user.name !== newName) {
+            const Group = require('../model/Group');
+            await Group.updateMany(
+                { "members.phone": oldPhone },
+                { $set: { "members.$[elem].phone": newPhone, "members.$[elem].name": newName } },
+                { arrayFilters: [{ "elem.phone": oldPhone }] }
+            );
+        }
+
+        res.status(200).json({ user: toPublicUser(user) });
+    } catch (err) {
+        res.status(500).json({ message: 'Failed to update profile', error: err.message });
+    }
+};
