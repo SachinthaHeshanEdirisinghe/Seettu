@@ -414,7 +414,7 @@ function App() {
                   autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'}
                 />
               </div>
-              <button type="submit" className="mc-btn mc-btn--primary auth-submit" disabled={authSubmitting}>
+              <button type="submit" id='submit' className="mc-btn mc-btn--primary auth-submit" disabled={authSubmitting}>
                 {authSubmitting ? 'Please wait…' : authMode === 'signup' ? 'Create account' : 'Sign in'}
               </button>
             </form>
