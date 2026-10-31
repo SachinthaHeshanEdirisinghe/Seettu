@@ -15,7 +15,7 @@ async function runMernTest() {
 
        
         let emailInput = await driver.wait(until.elementLocated(By.id('auth-email')), 5000);
-        await emailInput.sendKeys('heshan.edirisingh3@gmail.com');
+        await emailInput.sendKeys('sachinthaheshanedirisinghe@gmail.com');
 
         
         let passwordInput = await driver.findElement(By.id('auth-password'));
@@ -25,7 +25,7 @@ async function runMernTest() {
         let submitBtn = await driver.findElement(By.id('submit'));
         await submitBtn.click();
         let successMessage = await driver.wait(
-    until.elementLocated(By.css('.mc-alert.mc-alert--success')), 
+    until.elementLocated(By.css('.hero')), 
     10000
 );
 
