@@ -1,116 +1,102 @@
-import { useNavigate } from 'react-router-dom';
-import Navbar from '../components/Navbar';
-import GroupCard from '../components/GroupCard';
+import { useMemo, useState } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { useGroups } from '../context/GroupsContext';
 import { ELECTRONIC_ADS } from '../constants';
+import { getFirstName } from '../utils';
+import AdCard from '../components/groups/AdCard';
+import GroupCard from '../components/groups/GroupCard';
 
-function HomePage({
-  theme,
-  onToggleTheme,
-  onSignOut,
-  error,
-  successMessage,
-  groups,
-  loading,
-  currentUser,
-  joiningGroupId,
-  addingMemberId,
-  memberDrafts,
-  onJoin,
-  onDelete,
-  onToggleAddMember,
-  onMemberDraftChange,
-  onAddMember,
-  onRemoveMember,
-  onBulkAddMembers,
-  onBulkRemoveMembers,
-  onUpdateProfile
-}) {
-  const navigate = useNavigate();
+const ALL = 'All';
+const AD_CATEGORIES = [ALL, ...new Set(ELECTRONIC_ADS.map((ad) => ad.category))];
 
-  const userGroups = groups.filter(group => 
-    group.admin === currentUser?.email || 
-    (Array.isArray(group.members) && currentUser?.phone && group.members.some(member => member.phone === currentUser.phone))
+function HomePage() {
+  const { user } = useAuth();
+  const { groups, loading } = useGroups();
+  const [category, setCategory] = useState(ALL);
+
+  const myGroups = useMemo(
+    () =>
+      groups.filter(
+        (g) =>
+          g.admin === user?.email ||
+          (Array.isArray(g.members) &&
+            user?.phone &&
+            g.members.some((m) => m.phone === user.phone))
+      ),
+    [groups, user]
   );
+  const managedCount = myGroups.filter((g) => g.admin === user?.email).length;
+
+  const ads = category === ALL ? ELECTRONIC_ADS : ELECTRONIC_ADS.filter((a) => a.category === category);
 
   return (
-    <div className="mobicircle-app">
-      <Navbar theme={theme} onToggleTheme={onToggleTheme} currentUser={currentUser} onUpdateProfile={onUpdateProfile} onSignOut={onSignOut} />
-      <div className="mobicircle-inner">
+    <>
+      <section className="hero" aria-labelledby="hello-heading">
+        <h1 id="hello-heading" className="hero__title">
+          Hi {getFirstName(user?.name)}, ready to pool an order?
+        </h1>
+        <p className="hero__text">
+          {loading
+            ? 'Loading your circles…'
+            : myGroups.length === 0
+            ? 'You are not in any circle yet. Pick a product below to start one.'
+            : `You are in ${myGroups.length} ${myGroups.length === 1 ? 'circle' : 'circles'}` +
+              (managedCount > 0 ? `, and you manage ${managedCount}.` : '.')}
+        </p>
+      </section>
 
-        {error && (
-          <div className="mc-alert mc-alert--error" role="alert">
-            {error}
-          </div>
-        )}
-        {successMessage && !error && (
-          <div className="mc-alert mc-alert--success" role="status">
-            {successMessage}
-          </div>
-        )}
-
-        <section className="mc-ads-panel" aria-labelledby="ads-heading">
-          <div className="mc-ads-header">
-            <h2 id="ads-heading">Electronic Device Advertisements</h2>
-            <span>After-login offers</span>
-          </div>
-          <div className="mc-ads-grid">
-            {ELECTRONIC_ADS.map((ad) => (
-              <article key={ad.id} className="mc-ad-card">
-                <span className="mc-ad-tag">{ad.tag}</span>
-                <h3>{ad.title}</h3>
-                <p>{ad.blurb}</p>
-                <div className="mc-ad-footer">
-                  <strong>{ad.price}</strong>
-                  <button
-                    type="button"
-                    className="mc-btn mc-btn--secondary"
-                    onClick={() => navigate(`/create-group/${ad.id}`)}
-                  >
-                    Create Group
-                  </button>
-                </div>
-              </article>
+      <section className="section" aria-labelledby="groups-heading">
+        <div className="section__head">
+          <h2 id="groups-heading" className="section__title">
+            Your circles
+          </h2>
+        </div>
+        {loading ? (
+          <div className="grid" aria-busy="true">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="skeleton" />
             ))}
           </div>
-        </section>
+        ) : myGroups.length === 0 ? (
+          <div className="empty">
+            <h3>No circles yet</h3>
+            <p>Choose a product below and start a buying circle. Your circles will show up here.</p>
+          </div>
+        ) : (
+          <div className="grid">
+            {myGroups.map((group) => (
+              <GroupCard key={group._id} group={group} />
+            ))}
+          </div>
+        )}
+      </section>
 
-        <section aria-labelledby="groups-heading">
-          <h2 id="groups-heading" className="mc-section-title">
-            Active circles
+      <section className="section" id="products" aria-labelledby="ads-heading">
+        <div className="section__head">
+          <h2 id="ads-heading" className="section__title">
+            Products to pool for
           </h2>
-          {loading ? (
-            <p className="mc-loading">Loading groups…</p>
-          ) : (
-            <div className="mc-grid">
-              {userGroups.length === 0 ? (
-                <p className="mc-empty">
-                  No groups yet. Pick a product above and start a buying circle.
-                </p>
-              ) : (
-                userGroups.map((group) => (
-                  <GroupCard
-                    key={group._id}
-                    group={group}
-                    currentUser={currentUser}
-                    joiningGroupId={joiningGroupId}
-                    addingMemberId={addingMemberId}
-                    memberDrafts={memberDrafts}
-                    onJoin={onJoin}
-                    onDelete={onDelete}
-                    onToggleAddMember={onToggleAddMember}
-                    onMemberDraftChange={onMemberDraftChange}
-                    onAddMember={onAddMember}
-                    onRemoveMember={onRemoveMember}
-                    onBulkAddMembers={onBulkAddMembers}
-                    onBulkRemoveMembers={onBulkRemoveMembers}
-                  />
-                ))
-              )}
-            </div>
-          )}
-        </section>
-      </div>
-    </div>
+          <div className="chips" role="group" aria-label="Filter products by category">
+            {AD_CATEGORIES.map((c) => (
+              <button
+                key={c}
+                type="button"
+                className={`chip ${category === c ? 'is-active' : ''}`}
+                onClick={() => setCategory(c)}
+                aria-pressed={category === c}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="grid grid--ads">
+          {ads.map((ad) => (
+            <AdCard key={ad.id} ad={ad} />
+          ))}
+        </div>
+      </section>
+    </>
   );
 }
 

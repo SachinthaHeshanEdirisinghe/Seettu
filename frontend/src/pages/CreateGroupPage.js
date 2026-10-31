@@ -1,100 +1,58 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import axios from 'axios';
-import { Trash2, UserPlus } from 'lucide-react';
-import AppHeader from '../components/AppHeader';
-import GroupCard from '../components/GroupCard';
-import { API_URL, CATEGORIES, getAdById } from '../constants';
-import { getErrorMessage, getSimilarGroups } from '../utils';
+import { useMemo, useState } from 'react';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, CircleAlert, Trash2, UserPlus } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { useGroups } from '../context/GroupsContext';
+import { useToast } from '../context/ToastContext';
+import { CATEGORIES, getAdById } from '../constants';
+import { formatMoney, getSimilarGroups, monthlyInstallment } from '../utils';
+import GroupCard from '../components/groups/GroupCard';
+import CategoryIcon from '../components/ui/CategoryIcon';
 
-function CreateGroupPage({
-  theme,
-  onToggleTheme,
-  onSignOut,
-  currentUser,
-  groups,
-  loading,
-  fetchGroups,
-  joiningGroupId,
-  addingMemberId,
-  memberDrafts,
-  onJoin,
-  onToggleAddMember,
-  onMemberDraftChange,
-  onAddMember,
-}) {
-  const { adId } = useParams();
+const EMPTY_MEMBER = { name: '', phone: '' };
+
+function CreateGroupForm({ ad }) {
   const navigate = useNavigate();
-  const ad = getAdById(adId);
+  const { user } = useAuth();
+  const { groups, loading, createGroup } = useGroups();
+  const notify = useToast();
 
   const [error, setError] = useState(null);
-  const [successMessage, setSuccessMessage] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({
-    groupName: '',
-    category: 'Car',
-    productName: '',
-    totalPrice: '',
-    members: [{ name: '', phone: '' }],
-  });
+  const [form, setForm] = useState(() => ({
+    groupName: ad.title,
+    category: CATEGORIES.includes(ad.category) ? ad.category : 'Phone',
+    productName: ad.title,
+    totalPrice: String(ad.totalPrice ?? ''),
+    members: user?.name && user?.phone ? [{ name: user.name, phone: user.phone }] : [{ ...EMPTY_MEMBER }],
+  }));
 
   const similarGroups = useMemo(() => getSimilarGroups(groups, ad), [groups, ad]);
-
-  useEffect(() => {
-    if (!ad) {
-      navigate('/', { replace: true });
-      return;
-    }
-    setForm({
-      groupName: ad.title,
-      category: CATEGORIES.includes(ad.category) ? ad.category : 'Phone',
-      productName: ad.title,
-      totalPrice: String(ad.totalPrice ?? ''),
-      members: currentUser?.name && currentUser?.phone
-        ? [{ name: currentUser.name, phone: currentUser.phone }]
-        : [{ name: '', phone: '' }],
-    });
-  }, [ad, currentUser, navigate]);
-
-  if (!ad) {
-    return null;
-  }
+  const monthly = monthlyInstallment(Number.parseFloat(form.totalPrice));
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleMemberChange = (index, field, value) => {
+  const handleMemberChange = (index, field, value) =>
     setForm((prev) => ({
       ...prev,
-      members: prev.members.map((member, memberIndex) =>
-        memberIndex === index ? { ...member, [field]: value } : member
-      ),
+      members: prev.members.map((m, i) => (i === index ? { ...m, [field]: value } : m)),
     }));
-  };
 
-  const handleAddMember = () => {
-    setForm((prev) => ({
-      ...prev,
-      members: [...prev.members, { name: '', phone: '' }],
-    }));
-  };
+  const addMemberRow = () =>
+    setForm((prev) => ({ ...prev, members: [...prev.members, { ...EMPTY_MEMBER }] }));
 
-  const handleRemoveMember = (index) => {
+  const removeMemberRow = (index) =>
     setForm((prev) => {
-      const updatedMembers = prev.members.filter((_, memberIndex) => memberIndex !== index);
-      return {
-        ...prev,
-        members: updatedMembers.length > 0 ? updatedMembers : [{ name: '', phone: '' }],
-      };
+      const next = prev.members.filter((_, i) => i !== index);
+      return { ...prev, members: next.length > 0 ? next : [{ ...EMPTY_MEMBER }] };
     });
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
-    setSuccessMessage(null);
 
     const totalPrice = Number.parseFloat(form.totalPrice);
     if (!form.groupName.trim() || !form.productName.trim()) {
@@ -107,92 +65,85 @@ function CreateGroupPage({
     }
 
     const members = form.members
-      .map((member) => ({
-        name: member.name.trim(),
-        phone: member.phone.trim(),
-      }))
-      .filter((member) => member.name || member.phone);
+      .map((m) => ({ name: m.name.trim(), phone: m.phone.trim() }))
+      .filter((m) => m.name || m.phone);
 
-    const hasIncompleteMember = members.some((member) => !member.name || !member.phone);
     if (members.length === 0) {
       setError('Please add at least one group member.');
       return;
     }
-    if (hasIncompleteMember) {
+    if (members.some((m) => !m.name || !m.phone)) {
       setError('Each member row must include both name and phone number.');
-      return;
-    }
-    if (!currentUser?.email) {
-      setError('You must be signed in to create a group.');
       return;
     }
 
     setSubmitting(true);
-    try {
-      await axios.post(API_URL, {
-        groupName: form.groupName.trim(),
-        category: form.category,
-        productName: form.productName.trim(),
-        totalPrice,
-        members,
-        creatorEmail: currentUser.email,
-      });
-      await fetchGroups();
-      navigate('/', {
-        state: { successMessage: `Group created for "${ad.title}".` },
-      });
-    } catch (err) {
-      setError(getErrorMessage(err));
-    } finally {
-      setSubmitting(false);
+    const { ok } = await createGroup({
+      groupName: form.groupName.trim(),
+      category: form.category,
+      productName: form.productName.trim(),
+      totalPrice,
+      members,
+    });
+    setSubmitting(false);
+
+    if (ok) {
+      notify.success(`Group created for “${ad.title}”.`);
+      navigate('/');
     }
   };
 
   return (
-    <div className="mobicircle-app">
-      <div className="mobicircle-inner">
-        <AppHeader theme={theme} onToggleTheme={onToggleTheme} onSignOut={onSignOut}>
-          <Link to="/" className="mc-btn mc-btn--secondary mc-back-link">
-            ← Back to home
-          </Link>
-        </AppHeader>
+    <>
+      <Link to="/" className="back-link">
+        <ArrowLeft size={16} aria-hidden /> Back to home
+      </Link>
 
-        {error && (
-          <div className="mc-alert mc-alert--error" role="alert">
-            {error}
-          </div>
-        )}
-        {successMessage && !error && (
-          <div className="mc-alert mc-alert--success" role="status">
-            {successMessage}
-          </div>
-        )}
-
-        <section className="mc-product-banner" aria-labelledby="product-banner-heading">
-          <span className="mc-ad-tag">{ad.tag}</span>
-          <h2 id="product-banner-heading">{ad.title}</h2>
+      <section className="product-banner" aria-labelledby="product-banner-heading">
+        <span className="product-banner__icon">
+          <CategoryIcon category={ad.category} size={28} />
+        </span>
+        <div className="product-banner__body">
+          <span className="ad-card__tag">{ad.tag}</span>
+          <h1 id="product-banner-heading" className="product-banner__title">
+            {ad.title}
+          </h1>
           <p>{ad.blurb}</p>
-          <strong>{ad.price}</strong>
-        </section>
+        </div>
+        <strong className="product-banner__price">{ad.price}</strong>
+      </section>
 
-        <div className="mc-create-layout">
-          <section className="mc-panel" aria-labelledby="new-group-heading">
-            <h2 id="new-group-heading">Start a buying circle</h2>
-            <form onSubmit={handleSubmit} noValidate>
-              <div className="mc-form-grid">
-                <div className="mc-field">
-                  <label htmlFor="groupName">Group name</label>
+      <div className="create-layout">
+        <section className="panel" aria-labelledby="new-group-heading">
+          <h2 id="new-group-heading" className="panel__title">
+            Start a buying circle
+          </h2>
+
+          {error && (
+            <div className="alert alert--error" role="alert">
+              <CircleAlert size={18} aria-hidden />
+              <span>{error}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} noValidate>
+            <div className="form-grid">
+              <div className="field">
+                <label htmlFor="groupName">Group name</label>
+                <div className="field__control">
                   <input
                     id="groupName"
                     name="groupName"
                     value={form.groupName}
                     onChange={handleChange}
-                    placeholder="e.g. Downtown EV buyers"
+                    placeholder="e.g. Kandy TV buyers"
                     autoComplete="off"
                   />
                 </div>
-                <div className="mc-field">
-                  <label htmlFor="category">Category</label>
+              </div>
+              <div className="field">
+                <label htmlFor="category">Category</label>
+                <div className="field__control">
                   <select id="category" name="category" value={form.category} onChange={handleChange}>
                     {CATEGORIES.map((c) => (
                       <option key={c} value={c}>
@@ -201,19 +152,23 @@ function CreateGroupPage({
                     ))}
                   </select>
                 </div>
-                <div className="mc-field">
-                  <label htmlFor="productName">Product name</label>
+              </div>
+              <div className="field">
+                <label htmlFor="productName">Product name</label>
+                <div className="field__control">
                   <input
                     id="productName"
                     name="productName"
                     value={form.productName}
                     onChange={handleChange}
-                    placeholder="e.g. Model Y — Long Range"
+                    placeholder="e.g. Samsung 55&quot; 4K Smart TV"
                     autoComplete="off"
                   />
                 </div>
-                <div className="mc-field">
-                  <label htmlFor="totalPrice">Total price</label>
+              </div>
+              <div className="field">
+                <label htmlFor="totalPrice">Total price</label>
+                <div className="field__control">
                   <input
                     id="totalPrice"
                     name="totalPrice"
@@ -226,19 +181,21 @@ function CreateGroupPage({
                   />
                 </div>
               </div>
-              <div className="mc-members-section">
-                <div className="mc-members-header">
-                  <h3>Group Members</h3>
-                  <button type="button" className="mc-btn mc-btn--secondary" onClick={handleAddMember}>
-                    <UserPlus size={16} aria-hidden />
-                    Add Member
-                  </button>
-                </div>
-                <div className="mc-members-list">
-                  {form.members.map((member, index) => (
-                    <div className="mc-member-row" key={`member-${index}`}>
-                      <div className="mc-field">
-                        <label htmlFor={`member-name-${index}`}>Member Name</label>
+            </div>
+
+            <div className="members-box">
+              <div className="members-box__head">
+                <h3>Group members</h3>
+                <button type="button" className="btn btn--secondary btn--sm" onClick={addMemberRow}>
+                  <UserPlus size={15} aria-hidden /> Add member
+                </button>
+              </div>
+              <div className="members-box__list">
+                {form.members.map((member, index) => (
+                  <div className="member-row" key={`member-${index}`}>
+                    <div className="field">
+                      <label htmlFor={`member-name-${index}`}>Member name</label>
+                      <div className="field__control">
                         <input
                           id={`member-name-${index}`}
                           value={member.name}
@@ -247,69 +204,76 @@ function CreateGroupPage({
                           autoComplete="off"
                         />
                       </div>
-                      <div className="mc-field">
-                        <label htmlFor={`member-phone-${index}`}>Phone Number</label>
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`member-phone-${index}`}>Phone number</label>
+                      <div className="field__control">
                         <input
                           id={`member-phone-${index}`}
                           value={member.phone}
                           onChange={(e) => handleMemberChange(index, 'phone', e.target.value)}
-                          placeholder="e.g. 9876543210"
+                          placeholder="e.g. 0771234567"
                           autoComplete="off"
                         />
                       </div>
-                      <button
-                        type="button"
-                        className="mc-remove-member"
-                        onClick={() => handleRemoveMember(index)}
-                        aria-label={`Remove member ${index + 1}`}
-                      >
-                        <Trash2 size={14} aria-hidden />
-                      </button>
                     </div>
-                  ))}
-                </div>
-              </div>
-              <div className="mc-submit-row">
-                <button type="submit" className="mc-btn mc-btn--primary" disabled={submitting}>
-                  {submitting ? 'Creating…' : 'Create group'}
-                </button>
-                <span className="mc-hint">Monthly installment uses total ÷ 10.</span>
-              </div>
-            </form>
-          </section>
-
-          <section aria-labelledby="similar-groups-heading">
-            <h2 id="similar-groups-heading" className="mc-section-title">
-              Similar groups ({ad.category})
-            </h2>
-            {loading ? (
-              <p className="mc-loading">Loading similar groups…</p>
-            ) : similarGroups.length === 0 ? (
-              <p className="mc-empty">No similar groups yet. Be the first to start one for this product.</p>
-            ) : (
-              <div className="mc-grid mc-grid--compact">
-                {similarGroups.map((group) => (
-                  <GroupCard
-                    key={group._id}
-                    group={group}
-                    currentUser={currentUser}
-                    joiningGroupId={joiningGroupId}
-                    addingMemberId={addingMemberId}
-                    memberDrafts={memberDrafts}
-                    onJoin={onJoin}
-                    onToggleAddMember={onToggleAddMember}
-                    onMemberDraftChange={onMemberDraftChange}
-                    onAddMember={onAddMember}
-                    showDelete={false}
-                  />
+                    <button
+                      type="button"
+                      className="icon-btn icon-btn--danger member-row__remove"
+                      onClick={() => removeMemberRow(index)}
+                      aria-label={`Remove member ${index + 1}`}
+                    >
+                      <Trash2 size={16} aria-hidden />
+                    </button>
+                  </div>
                 ))}
               </div>
-            )}
-          </section>
-        </div>
+            </div>
+
+            <div className="submit-row">
+              <button type="submit" className="btn btn--primary btn--lg" disabled={submitting}>
+                {submitting ? 'Creating…' : 'Create group'}
+              </button>
+              <span className="hint">
+                {monthly != null
+                  ? `Each month: ${formatMoney(monthly)} (total ÷ 10).`
+                  : 'Monthly installment is the total ÷ 10.'}
+              </span>
+            </div>
+          </form>
+        </section>
+
+        <section aria-labelledby="similar-groups-heading">
+          <h2 id="similar-groups-heading" className="section__title">
+            Similar groups ({ad.category})
+          </h2>
+          {loading ? (
+            <div className="skeleton" aria-busy="true" />
+          ) : similarGroups.length === 0 ? (
+            <div className="empty">
+              <h3>No similar groups yet</h3>
+              <p>Be the first to start one for this product.</p>
+            </div>
+          ) : (
+            <div className="stack">
+              {similarGroups.map((group) => (
+                <GroupCard key={group._id} group={group} showDelete={false} />
+              ))}
+            </div>
+          )}
+        </section>
       </div>
-    </div>
+    </>
   );
+}
+
+function CreateGroupPage() {
+  const { adId } = useParams();
+  const ad = getAdById(adId);
+
+  if (!ad) return <Navigate to="/" replace />;
+  // key => form state resets if the user opens a different product
+  return <CreateGroupForm key={ad.id} ad={ad} />;
 }
 
 export default CreateGroupPage;

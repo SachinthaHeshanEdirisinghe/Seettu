@@ -31,3 +31,22 @@ export const getSimilarGroups = (groups, ad) => {
     return productName.includes(titleLower) || titleLower.includes(productName);
   });
 };
+
+/** "Alex, 0710001000" per line -> [{ name, phone }] (invalid lines are skipped) */
+export const parseBulkMembers = (text) =>
+  String(text || '')
+    .split('\n')
+    .map((line) => line.split(','))
+    .filter((parts) => parts.length >= 2)
+    .map(([name, phone]) => ({ name: name.trim(), phone: phone.trim() }))
+    .filter((m) => m.name && m.phone);
+
+export const getInitials = (name) =>
+  String(name || '?')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || '')
+    .join('') || '?';
+
+export const getFirstName = (name) => String(name || '').trim().split(/\s+/)[0] || 'there';
